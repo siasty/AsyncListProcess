@@ -12,21 +12,16 @@ namespace async
 
         static async Task Main(string[] args)
         {
-            try
+            var t = await AccessTheProcesAsync();
+            if (t.Item1)
             {
-               await AccessTheProcesAsync();
-               Console.WriteLine("\r\nComplete.");
+                Console.WriteLine("Complited.\t Executed {0}/{1} command.",t.Item2[0],t.Item2[1] );
             }
-            catch (OperationCanceledException)
+            else
             {
-                Console.WriteLine("\r\nCanceled.\r\n");
+                Console.WriteLine("Failed.\t Executed {0}/{1} command.", t.Item2[0], t.Item2[1]);
             }
-            catch (Exception)
-            {
-                Console.WriteLine("\r\nFailed.\r\n");
-            }
-
-
+  
 
             Console.ReadKey();
         }
@@ -37,9 +32,10 @@ namespace async
             public string cmd { get; set; }
             public string arg { get; set; }
         }
-        public static async Task<int> RunProcessAsync(string fName, string arg = null, int lp = 1)
+
+        public static int RunProcess(string fName, string arg = null, int lp = 1)
         {
-            var tcs = new TaskCompletionSource<int>();
+            int result = 0;
             try
             {
                 var process = new Process
@@ -58,88 +54,68 @@ namespace async
                 process.Exited += (sender, args) =>
                 {
                     Console.WriteLine("LP: {2}\t Process Id: {3}\t Total time:    {0} sec.\t\t Exit code:    {1}\r\n", process.TotalProcessorTime.TotalSeconds, process.ExitCode, lp, process.Id);
-                    if (process.ExitCode != 0)
+                    result = process.ExitCode;
+                    if (!process.HasExited)
                     {
-                        tcs.SetException(new InvalidOperationException("The process did not exit correctly."));
                         process.Dispose();
-                    }
-                    else
-                    {
-                        tcs.SetResult(process.ExitCode);
-                        process.Dispose();
+                        process.Kill();
                     }
                 };
 
-                process.Start();
-                await process.WaitForExitAsync();
-            }
-            catch (Exception ex)
+                if (process.Start())
+                {
+                    process.WaitForExit();
+                }
+            }catch(Exception ex)
             {
-                tcs.SetException(ex);
+                Console.WriteLine("LP: {2}\t Process Id: {3}\t Total time:    {0} sec.\t\t Exit code:    {1}\r\n", 0, 1, lp, 0);
+                result = 1;
             }
-
-            return await tcs.Task;
+            return result;
 
         }
+
         private static List<CMD> CommandList()
         {
             List<CMD> cmd = new List<CMD>
             {
                new CMD{ lp = 1 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 2 ,cmd = "cmd", arg  = "/C dir"},
-               new CMD{ lp = 3 ,cmd = "cmd", arg  = "/C timeout 10"},
-               new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dir"},
+               new CMD{ lp = 3 ,cmd = "cmde", arg  = "/C timeout 20"},
+               new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dier"},
                new CMD{ lp = 5 ,cmd = "cmd", arg  = "/C dir"},
             };
             return cmd;
         }
-        private static async Task AccessTheProcesAsync()
+
+        public static async Task<Tuple<bool,int[]>> AccessTheProcesAsync()
         {
- 
+            var tcs = new TaskCompletionSource<Tuple<bool, int[]>>();
+
             List<CMD> CmdlList = CommandList();
+            int i = 0;
+            int count = CmdlList.Count();
+            int exe = 0;
+            int[] result= new int[2];
 
-            IEnumerable<Task<int>> downloadTasksQuery =
-                from url in CmdlList select RunProcessAsync(url.cmd, url.arg, url.lp) ;
-
-            
-            List<Task<int>> downloadTasks = downloadTasksQuery.ToList();
-
-            while (downloadTasks.Count > 0)
+            foreach(var url in CmdlList)
             {
-                Task<int> firstFinishedTask = await Task.WhenAny(downloadTasks);
-                downloadTasks.Remove(firstFinishedTask);
-                await firstFinishedTask;
+                var _exe = RunProcess(url.cmd, url.arg, url.lp);
+                i = i + _exe;
             }
+            exe = count - i;
+            result[0] = exe;
+            result[1] = count;
+            if (i != 0)
+            {
+                tcs.SetResult(Tuple.Create(false,result));
+            } else
+            {
+                tcs.SetResult(Tuple.Create(true,result));
+            }
+
+            return await tcs.Task;
         }
-        public static async Task WaitForExitAsync(this Process process, CancellationToken cancellationToken = default)
-        {
-            var tcs = new TaskCompletionSource<bool>();
-
-            void Process_Exited(object sender, EventArgs e)
-            {
-                tcs.TrySetResult(true);
-            }
-
-            process.EnableRaisingEvents = true;
-            process.Exited += Process_Exited;
-
-            try
-            {
-                if (process.HasExited)
-                {
-                    return;
-                }
-
-                using (cancellationToken.Register(() => tcs.TrySetCanceled()))
-                {
-                    await tcs.Task;
-                }
-            }
-            finally
-            {
-                process.Exited -= Process_Exited;
-            }
-        }
-
+    
     }
 }
