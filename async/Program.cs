@@ -12,16 +12,10 @@ namespace async
 
         static async Task Main(string[] args)
         {
-            var t = await AccessTheProcesAsync();
-            if (t.Item1)
-            {
-                Console.WriteLine("Complited.\t Executed {0}/{1} command.",t.Item2[0],t.Item2[1] );
-            }
-            else
-            {
-                Console.WriteLine("Failed.\t Executed {0}/{1} command.", t.Item2[0], t.Item2[1]);
-            }
-  
+            CancellationTokenSource cts = new CancellationTokenSource();
+
+            await AccessTheProcesAsync().WithWaitCancellation(cts.Token);
+
 
             Console.ReadKey();
         }
@@ -81,22 +75,23 @@ namespace async
             {
                new CMD{ lp = 1 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 2 ,cmd = "cmd", arg  = "/C dir"},
-               new CMD{ lp = 3 ,cmd = "cmde", arg  = "/C timeout 20"},
-               new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dier"},
+               new CMD{ lp = 3 ,cmd = "cmd", arg  = "/C timeout 20"},
+               new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 5 ,cmd = "cmd", arg  = "/C dir"},
             };
             return cmd;
         }
 
-        public static async Task<Tuple<bool,int[]>> AccessTheProcesAsync()
+        public static async Task<bool> AccessTheProcesAsync()
         {
-            var tcs = new TaskCompletionSource<Tuple<bool, int[]>>();
+            var guid = Guid.NewGuid();
+            var tcs = new TaskCompletionSource<bool>();
 
             List<CMD> CmdlList = CommandList();
             int i = 0;
             int count = CmdlList.Count();
             int exe = 0;
-            int[] result= new int[2];
+
 
             foreach(var url in CmdlList)
             {
@@ -104,18 +99,30 @@ namespace async
                 i = i + _exe;
             }
             exe = count - i;
-            result[0] = exe;
-            result[1] = count;
+            Console.Write("Executed {0}/{1} command. ", exe, count);
             if (i != 0)
             {
-                tcs.SetResult(Tuple.Create(false,result));
+                tcs.SetResult(false);
+                Console.WriteLine("Task {0} fail.",guid.ToString());
             } else
             {
-                tcs.SetResult(Tuple.Create(true,result));
+                tcs.SetResult(true);
+                Console.WriteLine("Task {0} complited.",guid.ToString());
             }
 
             return await tcs.Task;
         }
-    
+
+        public static async Task<T> WithWaitCancellation<T>( this Task<T> task, CancellationToken cancellationToken)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs))
+            {
+                if (task != await Task.WhenAny(task, tcs.Task)) throw new OperationCanceledException(cancellationToken);
+            }
+
+            return await task;
+        }
+
     }
 }
