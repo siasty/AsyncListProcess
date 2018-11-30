@@ -7,113 +7,129 @@ using System.Threading.Tasks;
 
 namespace async
 {
-    class Program
+    static class Program
     {
 
         static async Task Main(string[] args)
         {
-
-            try
-            {
-                await AccessTheProcesAsync();
-                Console.WriteLine("\r\nComplete.");
-            }
-            catch (OperationCanceledException)
-            {
-                Console.WriteLine("\r\nCanceled.\r\n");
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("\r\nFailed.\r\n");
-            }
-
-
+            CancellationTokenSource cts = new CancellationTokenSource();
+            await AccessTheProcesAsync().WithWaitCancellation(cts.Token);
 
             Console.ReadKey();
         }
 
-        class MyProcess : Process
-        {
-            public void Stop(TaskCompletionSource<int> tcs,int lp)
-            {
-                Console.WriteLine("LP: {2}\t Total time:    {0} sec.\t\t Exit code:    {1}\r\n", this.TotalProcessorTime.TotalSeconds, this.ExitCode,lp);
-
-                tcs.SetResult(this.ExitCode);
-                this.Dispose();
-                this.Close();
-                OnExited();
-
-            }
-        }
         class CMD
         {
             public int lp { get; set; }
             public string cmd { get; set; }
             public string arg { get; set; }
         }
-        public static Task<int> RunProcessAsync(string fName, string arg = null, int lp = 1)
-        {
-            var tcs = new TaskCompletionSource<int>();
 
-            var proc = new MyProcess();
+        public static int RunProcess(string fName, string arg = null, int lp = 1)
+        {
+            int result = 0;
             try
-            {    
-                    proc.StartInfo = new ProcessStartInfo
+            {
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
                     {
                         FileName = fName,
                         Arguments = arg,
-                        Verb = string.Format("Command_{0}",lp),
                         UseShellExecute = false,
                         RedirectStandardOutput = false,
                         CreateNoWindow = true
-                    };
-               
-                proc.Start();
-                proc.WaitForExit();
-                proc.Stop(tcs,lp);
+                    },
+                    EnableRaisingEvents = true
+                };
 
-            }
-            catch (Exception ex)
+                process.Exited += (sender, args) =>
+                {
+                    Console.WriteLine("LP: {2}\t Process Id: {3:D6}\t Total time: {0:N6} sec.\t\t Exit code: {1}", process.TotalProcessorTime.TotalSeconds, process.ExitCode, lp, process.Id);
+                    result = process.ExitCode;
+                    if (!process.HasExited)
+                    {
+                        process.Dispose();
+                        process.Kill();
+                    }
+                };
+
+                if (process.Start())
+                {
+                    process.WaitForExit();
+                }
+            }catch(Exception ex)
             {
-                tcs.SetException(ex);
-                Console.WriteLine("LP: {0} \t Error: {1}\r\n", lp, ex.Message);
-            }
 
-            return tcs.Task;
+                Console.WriteLine("LP: {2}\t Process Id: {3:D6}\t Total time: {0:N6} sec.\t\t Exit code: {1}", 0, 1, lp, 0);
+                result = 1;
+            }
+            return result;
+
         }
+
         private static List<CMD> CommandList()
         {
             List<CMD> cmd = new List<CMD>
             {
                new CMD{ lp = 1 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 2 ,cmd = "cmd", arg  = "/C dir"},
-               new CMD{ lp = 3 ,cmd = "cmds", arg  = "/C dir"},
+               new CMD{ lp = 3 ,cmd = "cmds", arg  = "/C timeout 20"},
                new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 5 ,cmd = "cmd", arg  = "/C dir"},
             };
             return cmd;
         }
-        static async Task AccessTheProcesAsync()
+
+        public static async Task<bool> AccessTheProcesAsync()
         {
- 
+            var guid = Guid.NewGuid();
+            WriteFullLine("Starting task: " + guid.ToString());
+            var tcs = new TaskCompletionSource<bool>();
+
             List<CMD> CmdlList = CommandList();
+            int i = 0;
+            int count = CmdlList.Count();
+            int exe = 0;
 
-            IEnumerable<Task<int>> downloadTasksQuery =
-                from url in CmdlList select RunProcessAsync(url.cmd, url.arg, url.lp);
 
-            List<Task<int>> downloadTasks = downloadTasksQuery.ToList();
-
-            while (downloadTasks.Count > 0)
+            foreach(var url in CmdlList)
             {
-                // Identify the first task that completes.
-                Task<int> firstFinishedTask = await Task.WhenAny(downloadTasks);
-
-                // ***Remove the selected task from the list so that you don't
-                downloadTasks.Remove(firstFinishedTask);
-
-                // Await the completed task.
-                await firstFinishedTask;
+                var _exe = RunProcess(url.cmd, url.arg, url.lp);
+                i = i + _exe;
             }
+            exe = count - i;
+            Console.Write("Executed {0}/{1} command. ", exe, count);
+            if (i != 0)
+            {
+                tcs.SetResult(false);
+                Console.WriteLine("Task {0} fail.",guid.ToString());
+            } else
+            {
+                tcs.SetResult(true);
+                Console.WriteLine("Task {0} complited.",guid.ToString());
+            }
+
+            return await tcs.Task;
+        }
+
+        public static async Task<T> WithWaitCancellation<T>( this Task<T> task, CancellationToken cancellationToken)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s).TrySetResult(true), tcs))
+            {
+                if (task != await Task.WhenAny(task, tcs.Task)) throw new OperationCanceledException(cancellationToken);
+            }
+
+            return await task;
+        }
+        static void WriteFullLine(string value)
+        {
+        
+            Console.BackgroundColor = ConsoleColor.Green;
+            Console.ForegroundColor = ConsoleColor.DarkGreen;
+            Console.Write(value.PadRight(Console.WindowWidth )); 
+            Console.ResetColor();
         }
     }
 }
