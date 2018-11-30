@@ -13,9 +13,7 @@ namespace async
         static async Task Main(string[] args)
         {
             CancellationTokenSource cts = new CancellationTokenSource();
-
             await AccessTheProcesAsync().WithWaitCancellation(cts.Token);
-
 
             Console.ReadKey();
         }
@@ -47,7 +45,7 @@ namespace async
 
                 process.Exited += (sender, args) =>
                 {
-                    Console.WriteLine("LP: {2}\t Process Id: {3}\t Total time:    {0} sec.\t\t Exit code:    {1}\r\n", process.TotalProcessorTime.TotalSeconds, process.ExitCode, lp, process.Id);
+                    Console.WriteLine("LP: {2}\t Process Id: {3:D6}\t Total time: {0:N6} sec.\t\t Exit code: {1}", process.TotalProcessorTime.TotalSeconds, process.ExitCode, lp, process.Id);
                     result = process.ExitCode;
                     if (!process.HasExited)
                     {
@@ -62,7 +60,8 @@ namespace async
                 }
             }catch(Exception ex)
             {
-                Console.WriteLine("LP: {2}\t Process Id: {3}\t Total time:    {0} sec.\t\t Exit code:    {1}\r\n", 0, 1, lp, 0);
+
+                Console.WriteLine("LP: {2}\t Process Id: {3:D6}\t Total time: {0:N6} sec.\t\t Exit code: {1}", 0, 1, lp, 0);
                 result = 1;
             }
             return result;
@@ -75,7 +74,7 @@ namespace async
             {
                new CMD{ lp = 1 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 2 ,cmd = "cmd", arg  = "/C dir"},
-               new CMD{ lp = 3 ,cmd = "cmd", arg  = "/C timeout 20"},
+               new CMD{ lp = 3 ,cmd = "cmds", arg  = "/C timeout 20"},
                new CMD{ lp = 4 ,cmd = "cmd", arg  = "/C dir"},
                new CMD{ lp = 5 ,cmd = "cmd", arg  = "/C dir"},
             };
@@ -85,6 +84,7 @@ namespace async
         public static async Task<bool> AccessTheProcesAsync()
         {
             var guid = Guid.NewGuid();
+            WriteFullLine("Starting task: " + guid.ToString());
             var tcs = new TaskCompletionSource<bool>();
 
             List<CMD> CmdlList = CommandList();
@@ -123,6 +123,13 @@ namespace async
 
             return await task;
         }
-
+        static void WriteFullLine(string value)
+        {
+        
+            Console.BackgroundColor = ConsoleColor.Green;
+            Console.ForegroundColor = ConsoleColor.DarkGreen;
+            Console.Write(value.PadRight(Console.WindowWidth )); 
+            Console.ResetColor();
+        }
     }
 }
